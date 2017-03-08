@@ -237,10 +237,12 @@ function validateKeyPaths(nestedPaths, table) {
 
 function createKey(item, table, keySchema) {
   if (keySchema == null) keySchema = table.KeySchema
-  var keyStr
+  var keyStr = ''
   traverseKey(table, keySchema, function(attr, type, isHash) {
-    if (isHash) keyStr = hashPrefix(item[attr][type], type) + '/'
-    keyStr += toRangeStr(item[attr][type], type) + '/'
+    if (isHash && item[attr] != undefined) keyStr = hashPrefix(item[attr][type], type) + '/'
+    if (item[attr] != undefined) {
+      keyStr += toRangeStr(item[attr][type], type) + '/'
+    }
   })
   return keyStr
 }
@@ -904,11 +906,16 @@ function updateIndexes(store, table, existingItem, item, cb) {
 }
 
 function getIndexActions(indexes, existingItem, item, table) {
-  var puts = [], deletes = [], tableKeys = table.KeySchema.map(function(key) { return key.AttributeName })
+  var puts = [], deletes = [], tableKeys = table.KeySchema.map(function(key) { return key.AttributeName }), hashKey = null
   indexes.forEach(function(index) {
+    var indexKeys = index.KeySchema.map(function(key) {
+      if (key.KeyType == 'HASH') {
+        hashKey = key.AttributeName
+      }
+      return key.AttributeName }), key = null, itemPieces = item
     var indexKeys = index.KeySchema.map(function(key) { return key.AttributeName }), key = null, itemPieces = item
 
-    if (item && indexKeys.every(function(key) { return item[key] != null })) {
+    if (item && indexKeys.every(function(key) { return key != hashKey || item[key] != null })) {
       if (index.Projection.ProjectionType != 'ALL') {
         var indexAttrs = indexKeys.concat(tableKeys, index.Projection.NonKeyAttributes || [])
         itemPieces = indexAttrs.reduce(function(obj, attr) {
@@ -921,7 +928,7 @@ function getIndexActions(indexes, existingItem, item, table) {
       puts.push({index: index.IndexName, key: key, item: itemPieces})
     }
 
-    if (existingItem && indexKeys.every(function(key) { return existingItem[key] != null })) {
+    if (existingItem && indexKeys.every(function(key) { return key != hashKey || existingItem[key] != null })) {
       var existingKey = createIndexKey(existingItem, table, index.KeySchema)
       if (existingKey != key) {
         deletes.push({index: index.IndexName, key: existingKey})
